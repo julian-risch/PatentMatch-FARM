@@ -58,21 +58,21 @@ def fetch_pt_checkpoints(dir):
 
 def main():
     # NOTE: This only needs to be run once
-    # convert_checkpoints(checkpoints_folder)
+    convert_checkpoints(checkpoints_folder)
+
     checkpoints = fetch_pt_checkpoints(checkpoints_folder)
-    epochs = 1
     print(f"Performing evaluation on these checkpoints: {checkpoints}")
     print(f"Performing evaluation using these experiments: {CONFIG_FILES}")
     for checkpoint in checkpoints:
         for i, (conf_name, conf_file) in enumerate(CONFIG_FILES.items()):
             experiments = load_experiments(conf_file)
+            steps = str(checkpoint).split("_")[-1]
             for j, experiment in enumerate(experiments):
-                mlflow_run_name = f"{conf_name}"
+                mlflow_run_name = f"{conf_name}_step{steps}_{j}"
                 experiment.logging.mlflow_url = mlflow_url
                 experiment.logging.mlflow_experiment = mlflow_experiment
                 experiment.logging.mlflow_run_name = mlflow_run_name
                 experiment.parameter.model = checkpoint
-                experiment.parameter.epochs = epochs
                 experiment.general.output_dir = str(checkpoint).split("/")[:-1]
                 run_experiment(experiment)
                 torch.cuda.empty_cache()

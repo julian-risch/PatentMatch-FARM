@@ -57,6 +57,7 @@ def run_experiment(args):
     )
 
     set_all_seeds(args.general.seed)
+    ml_logger.log_params({"seed": args.general.seed})
 
     # Prepare Data
     tokenizer = Tokenizer.load(
@@ -141,8 +142,8 @@ def run_experiment(args):
 
     model = trainer.train()
 
-    processor.save(Path(f"{args.general.output_dir}/{model_name}"))
-    model.save(Path(f"{args.general.output_dir}/{model_name}"))
+    # processor.save(Path(f"{args.general.output_dir}/{model_name}"))
+    # model.save(Path(f"{args.general.output_dir}/{model_name}"))
 
     ml_logger.end_run()
 
