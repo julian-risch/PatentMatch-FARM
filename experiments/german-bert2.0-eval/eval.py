@@ -23,7 +23,8 @@ import torch
 CONFIG_FILES = {
     "germEval18Fine": Path("germEval18Fine_config.json"),
     "germEval18Coarse": Path("germEval18Coarse_config.json"),
-    "germEval14": Path("germEval14_config.json")}
+    "germEval14": Path("germEval14_config.json")
+}
 bert_config_file = Path("../../saved_models/german_bert_v2_wwm/bert_config.json")
 checkpoints_folder = Path("../../saved_models/german_bert_v2_wwm")
 vocab_file = Path("../../saved_models/german_bert_v2_wwm/vocab.txt")
@@ -48,12 +49,12 @@ def fetch_tf_checkpoints(dir):
     files = os.listdir(dir)
     files = [f for f in files if "model.ckpt-" in f]
     checkpoints = set(".".join(f.split(".")[:2]) for f in files)
-    checkpoints = sorted(checkpoints, key=lambda x: int(x.split("-")[1]))
+    checkpoints = sorted(checkpoints, key=lambda x: int(x.split("-")[1]), reverse=True)
     return checkpoints
 
 def fetch_pt_checkpoints(dir):
     files = os.listdir(dir)
-    files = sorted([dir / f for f in files if "pt_" in f])
+    files = sorted([dir / f for f in files if "pt_" in f], reverse=True)
     return files
 
 def main():
