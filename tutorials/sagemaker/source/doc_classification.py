@@ -24,8 +24,9 @@ def doc_classification(args):
     set_all_seeds(seed=42)
     save_dir = Path("/opt/ml/model")
     use_amp = None
+    distributed = args.local_rank != -1
 
-    device, n_gpu = initialize_device_settings(use_cuda=True, use_amp=use_amp)
+    device, n_gpu = initialize_device_settings(use_cuda=True, use_amp=use_amp, local_rank=args.local_rank)
 
     # 1.Create a tokenizer
     tokenizer = Tokenizer.load(pretrained_model_name_or_path=args.base_lm_model, do_lower_case=False)
@@ -39,6 +40,8 @@ def doc_classification(args):
         tokenizer=tokenizer,
         max_seq_len=args.max_seq_len,
         data_dir=Path("../data/germeval18"),
+        train_filename="train.tsv",
+        test_filename="test.tsv",
         label_list=label_list,
         metric=metric,
         label_column_name="coarse_label",
@@ -46,7 +49,8 @@ def doc_classification(args):
 
     # 3. Create a DataSilo that loads several datasets (train/dev/test), provides DataLoaders for them and calculates a
     #    few descriptive statistics of our datasets
-    data_silo = DataSilo(processor=processor, batch_size=args.batch_size)
+
+    data_silo = DataSilo(processor=processor, batch_size=args.batch_size, distributed=distributed)
 
     # 4. Create an AdaptiveModel
     # a) which consists of a pretrained language model as a basis
@@ -72,6 +76,8 @@ def doc_classification(args):
         n_batches=len(data_silo.loaders["train"]),
         n_epochs=args.n_epochs,
         use_amp=use_amp,
+        distributed=distributed,
+        local_rank=args.local_rank
     )
 
     # 6. Feed everything to the Trainer, which keeps care of growing our model into powerful plant and evaluates it from time to time
@@ -90,23 +96,26 @@ def doc_classification(args):
     trainer.train()
 
     # 8. Hooray! You have a model. Store it:
-    model.save(save_dir)
-    processor.save(save_dir)
+    if args.local_rank in [-1, 0]:
+        model.save(save_dir)
+        processor.save(save_dir)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--n_epochs", type=int, default=2, help="number of epochs (default: 2)")
-    parser.add_argument("--batch_size", type=int, default=4, help="batch size (default: 4)")
-    parser.add_argument("--max_seq_len", type=int, default=64, help="batch size (default: 64)")
+    parser.add_argument("--n_epochs", type=int, default=1, help="number of epochs (default: 1)")
+    parser.add_argument("--batch_size", type=int, default=32, help="batch size, descrease if you run out of memory (default: 32)")
+    parser.add_argument("--max_seq_len", type=int, default=128, help="max_seq_len (default: 128)")
     parser.add_argument(
         "--base_lm_model",
         type=str,
-        default="bert-base-uncased",
-        help="base language model to use (default: bert-base-uncased)",
+        default="bert-base-german-cased",
+        help="base language model to use (default: bert-base-german-cased)",
     )
     parser.add_argument(
         "--evaluate_every", type=int, default=100, help="perform evaluation every n steps (default: 100)"
     )
+    parser.add_argument("--local_rank", type=int, default=-1, help="rank for distributed training (default: -1)")
+
     doc_classification(parser.parse_args())

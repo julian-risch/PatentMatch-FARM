@@ -136,7 +136,7 @@ def initialize_optimizer(model,
     if schedule_opts is None:
         # Default schedule: Linear Warmup with 10% warmup
         schedule_opts = {"name": "LinearWarmup",
-                         "num_warmup_steps": 0.1 * num_train_optimization_steps,
+                         "num_warmup_steps": int(0.1 * num_train_optimization_steps),
                          "num_training_steps": num_train_optimization_steps}
 
         # schedule_opts = {"name": "OneCycleLR", "max_lr":learning_rate, "pct_start": 0.1,
@@ -280,7 +280,7 @@ def _optimize_model(model, device, local_rank, optimizer=None, distributed=False
         # for some models DistributedDataParallel might complain about parameters
         # not contributing to loss. find_used_parameters remedies that.
         #TODO check if Wrapped DDP still needed?
-        model = DistributedDataParallel(model,
+        model = WrappedDDP(model,
                                         device_ids=device_ids,
                                         output_device=device_ids[0],
                                         find_unused_parameters=True)

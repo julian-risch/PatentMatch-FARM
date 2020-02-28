@@ -210,7 +210,9 @@ class Trainer:
         # Check that the tokenizer fits the language model
         self.model.verify_vocab_size(vocab_size=len(self.data_silo.processor.tokenizer))
 
-        logger.info(f"\n {GROWING_TREE}")
+        if self.local_rank in [-1, 0]:
+            logger.info(f"\n {GROWING_TREE}")
+
         self.model.train()
 
         do_stopping = False
@@ -221,7 +223,7 @@ class Trainer:
 
         for epoch in range(self.from_epoch + 1, self.epochs + 1):
             train_data_loader = self.data_silo.get_data_loader("train")
-            progress_bar = tqdm(train_data_loader)
+            progress_bar = tqdm(train_data_loader, disable=self.local_rank not in [-1, 0])
             for step, batch in enumerate(progress_bar, start=1):
                 # when resuming training from a checkpoint, we want to fast forward to the step of the checkpoint
                 if resume_from_step and step <= resume_from_step:
@@ -250,7 +252,7 @@ class Trainer:
                 loss = self.backward_propagate(per_sample_loss, step)
 
                 # Perform  evaluation
-                if self.global_step % self.evaluate_every == 0 and self.global_step != 0:
+                if self.global_step % self.evaluate_every == 0 and self.global_step != 0 and self.local_rank in [-1, 0]:
                     # When using StreamingDataSilo, each evaluation creates a new instance of
                     # dev_data_loader. In cases like training from scratch, this could cause
                     # some variance across evaluators due to the randomness in word masking.
