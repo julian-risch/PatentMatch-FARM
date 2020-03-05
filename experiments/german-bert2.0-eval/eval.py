@@ -26,10 +26,11 @@ CONFIG_FILES = {
     "germEval14": Path("germEval14_config.json")
 }
 bert_config_file = Path("../../saved_models/german_bert_v2_wwm/bert_config.json")
-checkpoints_folder = Path("../../saved_models/german_bert_v2_wwm")
+checkpoints_folder = Path("../../saved_models/german_bert_v2_wwm/phase_1_wwm_part_2/")
 vocab_file = Path("../../saved_models/german_bert_v2_wwm/vocab.txt")
-mlflow_url = "https://public-mlflow.deepset.ai/"
-mlflow_experiment = "Whole Word Masking"
+# mlflow_url = "https://public-mlflow.deepset.ai/"
+mlflow_url = "http://mlflow:hYfk-Pkdrt-53Jre-Ps7N@mlflow-research.deepset.ai"
+mlflow_experiment = "German BERT v2 Phase 1 wwm Part 2"
 
 def convert_checkpoints(dir):
     tf_checkpoints_names = fetch_tf_checkpoints(dir)
@@ -54,12 +55,13 @@ def fetch_tf_checkpoints(dir):
 
 def fetch_pt_checkpoints(dir):
     files = os.listdir(dir)
-    files = sorted([dir / f for f in files if "pt_" in f], reverse=True)
-    return files
+    files = [dir / f for f in files if "pt_" in f]
+    checkpoints = sorted(files, key=lambda x: int(str(x).replace("pt_bert_", "").split("/")[-1].split("-")[0]), reverse=True)
+    return checkpoints
 
 def main():
     # NOTE: This only needs to be run once
-    convert_checkpoints(checkpoints_folder)
+    # convert_checkpoints(checkpoints_folder)
 
     checkpoints = fetch_pt_checkpoints(checkpoints_folder)
     print(f"Performing evaluation on these checkpoints: {checkpoints}")
