@@ -29,7 +29,7 @@ bert_config_file = Path("../../saved_models/german_bert_v2_wwm/bert_config.json"
 checkpoints_folder = Path("../../saved_models/german_bert_v2_wwm/phase_1_wwm_part_2/")
 vocab_file = Path("../../saved_models/german_bert_v2_wwm/vocab.txt")
 # mlflow_url = "https://public-mlflow.deepset.ai/"
-mlflow_url = "http://mlflow:hYfk-Pkdrt-53Jre-Ps7N@mlflow-research.deepset.ai"
+mlflow_url = ""
 mlflow_experiment = "German BERT v2 Phase 1 wwm Part 2"
 
 def convert_checkpoints(dir):
