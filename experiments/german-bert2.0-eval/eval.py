@@ -15,7 +15,8 @@
 
 from pathlib import Path
 from experiment import run_experiment, load_experiments
-from convert_bert_original_tf_checkpoint_to_pytorch import convert_tf_checkpoint_to_pytorch as convert_tf_to_pt
+from convert_bert_original_tf_checkpoint_to_pytorch import convert_tf_checkpoint_to_pytorch as convert_tf_to_pt_bert
+from convert_albert_original_tf_checkpoint_to_pytorch import convert_tf_checkpoint_to_pytorch as convert_tf_to_pt_albert
 import os
 from shutil import copyfile
 import torch
@@ -25,14 +26,21 @@ CONFIG_FILES = {
     "germEval18Coarse": Path("germEval18Coarse_config.json"),
     "germEval14": Path("germEval14_config.json")
 }
-bert_config_file = Path("../../saved_models/german_bert_v2_wwm/bert_config.json")
-checkpoints_folder = Path("../../saved_models/german_bert_v2_wwm/phase_1_wwm_part_2/")
-vocab_file = Path("../../saved_models/german_bert_v2_wwm/vocab.txt")
+
+model_type = "albert"
+bert_config_file = Path("../../saved_models/albert_xl/albert_config_new.json")
+checkpoints_folder = Path("../../saved_models/albert_xl/")
+vocab_file = Path("../../saved_models/albert_xl/german-albert-v1.vocab")
+tokenizer_model = Path("../../saved_models/albert_xl/german-albert-v1.model")
 # mlflow_url = "https://public-mlflow.deepset.ai/"
 mlflow_url = ""
 mlflow_experiment = "German BERT v2 Phase 1 wwm Part 2"
 
-def convert_checkpoints(dir):
+def convert_checkpoints(dir, model_type):
+    if model_type == "bert":
+        convert_tf_to_pt = convert_tf_to_pt_bert
+    elif model_type == "albert":
+        convert_tf_to_pt = convert_tf_to_pt_albert
     tf_checkpoints_names = fetch_tf_checkpoints(dir)
     tf_checkpoints = [dir / tfcn for tfcn in tf_checkpoints_names]
     hf_checkpoints = []
@@ -45,6 +53,8 @@ def convert_checkpoints(dir):
         convert_tf_to_pt(tfc, bert_config_file, dump_dir / "pytorch_model.bin")
         copyfile(bert_config_file, dump_dir / "config.json")
         copyfile(vocab_file, dump_dir / "vocab.txt")
+        if tokenizer_model:
+            copyfile(tokenizer_model, dump_dir/"spiece.model")
 
 def fetch_tf_checkpoints(dir):
     files = os.listdir(dir)
@@ -61,7 +71,7 @@ def fetch_pt_checkpoints(dir):
 
 def main():
     # NOTE: This only needs to be run once
-    # convert_checkpoints(checkpoints_folder)
+    # convert_checkpoints(checkpoints_folder, model_type)
 
     checkpoints = fetch_pt_checkpoints(checkpoints_folder)
     print(f"Performing evaluation on these checkpoints: {checkpoints}")
