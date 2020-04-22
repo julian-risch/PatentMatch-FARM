@@ -28,13 +28,15 @@ CONFIG_FILES = {
 }
 
 model_type = "albert"
-bert_config_file = Path("../../saved_models/albert_xl/albert_config_new.json")
-checkpoints_folder = Path("../../saved_models/albert_xl/")
-vocab_file = Path("../../saved_models/albert_xl/german-albert-v1.vocab")
-tokenizer_model = Path("../../saved_models/albert_xl/german-albert-v1.model")
+bert_config_file = Path("../../saved_models/albert_pod/albert_xl_config_new.json")
+checkpoints_folder = Path("../../saved_models/albert_pod/")
+vocab_file = Path("../../saved_models/albert_pod/german-albert-v1.vocab")
+tokenizer_model = Path("../../saved_models/albert_pod/german-albert-v1.model")
+models = ["xlm-roberta-large"]
 # mlflow_url = "https://public-mlflow.deepset.ai/"
 mlflow_url = ""
-mlflow_experiment = "German BERT v2 Phase 1 wwm Part 2"
+mlflow_experiment = "Test"
+
 
 def convert_checkpoints(dir, model_type):
     if model_type == "bert":
@@ -69,9 +71,9 @@ def fetch_pt_checkpoints(dir):
     checkpoints = sorted(files, key=lambda x: int(str(x).replace("pt_bert_", "").split("/")[-1].split("-")[0]), reverse=True)
     return checkpoints
 
-def main():
+def main_from_saved():
     # NOTE: This only needs to be run once
-    # convert_checkpoints(checkpoints_folder, model_type)
+    convert_checkpoints(checkpoints_folder, model_type)
 
     checkpoints = fetch_pt_checkpoints(checkpoints_folder)
     print(f"Performing evaluation on these checkpoints: {checkpoints}")
@@ -90,5 +92,23 @@ def main():
                 run_experiment(experiment)
                 torch.cuda.empty_cache()
 
+def main_from_downloaded():
+    print(f"Performing evaluation on these models: {models}")
+    print(f"Performing evaluation using these experiments: {CONFIG_FILES}")
+    for model in models:
+        for i, (conf_name, conf_file) in enumerate(CONFIG_FILES.items()):
+            experiments = load_experiments(conf_file)
+            for j, experiment in enumerate(experiments):
+                mlflow_run_name = f"{conf_name}_{model}_{j}"
+                experiment.logging.mlflow_url = mlflow_url
+                experiment.logging.mlflow_experiment = mlflow_experiment
+                experiment.logging.mlflow_run_name = mlflow_run_name
+                experiment.parameter.model = model
+                experiment.general.output_dir = "benchmarks"
+                run_experiment(experiment)
+                torch.cuda.empty_cache()
+
+
 if __name__ == "__main__":
-    main()
+    # main_from_saved()
+    main_from_downloaded()
