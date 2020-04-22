@@ -25,11 +25,14 @@ from farm.data_handler.samples import (
 )
 from farm.data_handler.utils import (
     read_tsv,
+    read_tsv_sentence_pair,
     read_docs_from_txt,
     read_ner_file,
     read_squad_file,
     is_json,
     get_sentence_pair,
+    get_sequence_pair,
+    join_sentences
 )
 from farm.modeling.tokenization import Tokenizer, tokenize_with_metadata, truncate_sequences
 from farm.utils import MLFlowLogger as MlLogger
@@ -190,7 +193,8 @@ class Processor(ABC):
         processor = cls.load(tokenizer=tokenizer, processor_name=config["processor"], **config)
 
         for task_name, task in config["tasks"].items():
-            processor.add_task(name=task_name, metric=task["metric"], label_list=task["label_list"])
+            processor.add_task(name=task_name, metric=task["metric"], label_list=task["label_list"],
+                               label_column_name=task["label_column_name"], task_type=task["task_type"])
 
         if processor is None:
             raise Exception
@@ -275,6 +279,10 @@ class Processor(ABC):
             except:
                 logger.error(f"Could not create sample(s) from this dict: \n {basket.raw}")
                 raise
+        baskets_to_remove = [b.id for b in self.baskets if len(b.samples) == 0]
+        if baskets_to_remove:
+            logger.warning(f"Baskets with the following ids have been removed because they have no Samples: {baskets_to_remove}")
+        self.baskets = [b for b in self.baskets if len(b.samples) > 0]
 
     def _featurize_samples(self):
         for basket in self.baskets:
@@ -475,7 +483,11 @@ class TextClassificationProcessor(Processor):
 
     def _dict_to_samples(self, dictionary: dict, **kwargs) -> [Sample]:
         # this tokenization also stores offsets and a start_of_word mask
-        tokenized = tokenize_with_metadata(dictionary["text"], self.tokenizer)
+        text = dictionary["text"]
+        tokenized = tokenize_with_metadata(text, self.tokenizer)
+        if len(tokenized["tokens"]) == 0:
+            logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text}")
+            return []
         # truncate tokens, offsets and start_of_word to max_seq_len that can be handled by the model
         for seq_name in tokenized.keys():
             tokenized[seq_name], _, _ = truncate_sequences(seq_a=tokenized[seq_name], seq_b=None, tokenizer=self.tokenizer,
@@ -490,6 +502,46 @@ class TextClassificationProcessor(Processor):
             tokenizer=self.tokenizer,
         )
         return features
+
+class TextPairClassificationProcessor(TextClassificationProcessor):
+    """
+    Used to handle text pair classification datasets (e.g. Answer Selection or Natural Inference) that come in
+    tsv format. The columns should be called text, text_b and label.
+    """
+    def __init__(self, **kwargs):
+        super(TextPairClassificationProcessor, self).__init__(**kwargs)
+
+    def file_to_dicts(self, file: str) -> [dict]:
+        column_mapping = {task["label_column_name"]: task["label_name"] for task in self.tasks.values()}
+        dicts = read_tsv_sentence_pair(
+            rename_columns=column_mapping,
+            filename=file,
+            delimiter=self.delimiter,
+            skiprows=self.skiprows,
+            proxies=self.proxies,
+        )
+        return dicts
+
+    def _dict_to_samples(self, dictionary: dict, **kwargs) -> [Sample]:
+        tokenized_a = tokenize_with_metadata(dictionary["text"], self.tokenizer)
+        tokenized_b = tokenize_with_metadata(dictionary["text_b"], self.tokenizer)
+
+        if len(tokenized_a["tokens"]) == 0:
+            text = dictionary["text"]
+            logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text}")
+            return []
+        if len(tokenized_b["tokens"]) == 0:
+            text_b = dictionary["text_b"]
+            logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_b}")
+            return []
+
+        tokenized = {"tokens": tokenized_a["tokens"],
+                     "tokens_b": tokenized_b["tokens"]}
+        tokenized["tokens"], tokenized["tokens_b"], _ = truncate_sequences(seq_a=tokenized["tokens"],
+                                                                           seq_b=tokenized["tokens_b"],
+                                                                           tokenizer=self.tokenizer,
+                                                                           max_seq_len=self.max_seq_len)
+        return [Sample(id=None, clear_text=dictionary, tokenized=tokenized)]
 
 
 #########################################
@@ -648,6 +700,10 @@ class NERProcessor(Processor):
     def _dict_to_samples(self, dictionary: dict, **kwargs) -> [Sample]:
         # this tokenization also stores offsets, which helps to map our entity tags back to original positions
         tokenized = tokenize_with_metadata(dictionary["text"], self.tokenizer)
+        if len(tokenized["tokens"]) == 0:
+            text = dictionary["text"]
+            logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text}")
+            return []
         # truncate tokens, offsets and start_of_word to max_seq_len that can be handled by the model
         for seq_name in tokenized.keys():
             tokenized[seq_name], _, _ = truncate_sequences(seq_a=tokenized[seq_name], seq_b=None, tokenizer=self.tokenizer,
@@ -682,6 +738,7 @@ class BertStyleLMProcessor(Processor):
         test_filename="test.txt",
         dev_split=0.0,
         next_sent_pred=True,
+        next_sent_pred_style="sentence",
         max_docs=None,
         proxies=None,
         **kwargs
@@ -709,6 +766,12 @@ class BertStyleLMProcessor(Processor):
         :type dev_split: float
         :param next_sent_pred: Whether to use next_sentence_prediction objective or not
         :type next_sent_pred: bool
+        :param next_sent_pred_style:
+            Two different styles for next sentence prediction available:
+                - "sentence":   Use of a single sentence for Sequence A and a single sentence for Sequence B
+                - "bert-style": Fill up all of max_seq_len tokens and split into Sequence A and B at sentence border.
+                                If there are too many tokens, Sequence B will be truncated.
+        :type next_sent_pred_style: str
         :param max_docs: maximum number of documents to include from input dataset
         :type max_docs: int
         :param proxies: proxy configuration to allow downloads of remote datasets.
@@ -734,6 +797,7 @@ class BertStyleLMProcessor(Processor):
         )
 
         self.next_sent_pred = next_sent_pred
+        self.next_sent_pred_style = next_sent_pred_style
         added_tokens = self.get_added_tokens()
         self.add_task("lm", "acc", list(self.tokenizer.vocab) + added_tokens)
         if self.next_sent_pred:
@@ -749,55 +813,154 @@ class BertStyleLMProcessor(Processor):
         return dicts
 
     def _dict_to_samples(self, dictionary, all_dicts=None):
-        assert len(all_dicts) > 1, "Need at least 2 documents to sample random sentences from"
         doc = dictionary["doc"]
+
+        # next sentence prediction...
+        if self.next_sent_pred:
+            assert len(all_dicts) > 1, "Need at least 2 documents to sample random sentences from"
+            # ...with single sentences
+            if self.next_sent_pred_style == "sentence":
+                samples = self._dict_to_samples_single_sentence(doc, all_dicts)
+            # ...bert style
+            elif self.next_sent_pred_style == "bert-style":
+                samples = self._dict_to_samples_bert_style(doc, all_dicts)
+            else:
+                raise NotImplementedError("next_sent_pred_style has to be 'sentence' or 'bert-style'")
+
+        # no next sentence prediction
+        else:
+            samples = self._dict_to_samples_no_next_sent(doc)
+
+        return samples
+
+    def _dict_to_samples_single_sentence(self, doc, all_dicts):
         samples = []
 
         # create one sample for each sentence in the doc (except for the very last -> "nextSentence" is impossible)
         for idx in range(len(doc) - 1):
             tokenized = {}
-            if self.next_sent_pred:
-                text_a, text_b, is_next_label = get_sentence_pair(doc, all_dicts, idx)
-                sample_in_clear_text = {
-                    "text_a": text_a,
-                    "text_b": text_b,
-                    "nextsentence_label": is_next_label,
-                }
-                # tokenize
-                tokenized["text_a"] = tokenize_with_metadata(
-                    text_a, self.tokenizer
+            text_a, text_b, is_next_label = get_sentence_pair(doc, all_dicts, idx)
+            sample_in_clear_text = {
+                "text_a" : text_a,
+                "text_b" : text_b,
+                "nextsentence_label" : is_next_label,
+            }
+            # tokenize
+            tokenized["text_a"] = tokenize_with_metadata(text_a, self.tokenizer)
+            tokenized["text_b"] = tokenize_with_metadata(text_b, self.tokenizer)
+
+            if len(tokenized["text_a"]["tokens"]) == 0:
+                logger.warning(
+                    f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_a}")
+                continue
+            if len(tokenized["text_b"]["tokens"]) == 0:
+                logger.warning(
+                    f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_b}")
+                continue
+
+            # truncate to max_seq_len
+            for seq_name in ["tokens", "offsets", "start_of_word"]:
+                tokenized["text_a"][seq_name], tokenized["text_b"][seq_name], _ = truncate_sequences(
+                    seq_a=tokenized["text_a"][seq_name],
+                    seq_b=tokenized["text_b"][seq_name],
+                    tokenizer=self.tokenizer,
+                    max_seq_len=self.max_seq_len)
+
+            samples.append(Sample(id=None, clear_text=sample_in_clear_text, tokenized=tokenized))
+
+        return samples
+
+    def _dict_to_samples_bert_style(self, doc, all_dicts):
+        samples = []
+        # account for [CLS], [SEP], [SEP]
+        max_num_tokens = self.max_seq_len - 3
+
+        # tokenize
+        doc_tokenized = []
+        for sentence in doc:
+            doc_tokenized.append(tokenize_with_metadata(sentence, self.tokenizer))
+
+        current_chunk = []
+        current_chunk_clear_text = []
+        current_length = 0
+        i = 0
+        while i < len(doc_tokenized):
+            current_segment = doc_tokenized[i]
+            current_length += len(current_segment["tokens"])
+            current_chunk.append(current_segment)
+            current_chunk_clear_text.append(doc[i])
+
+            # reached end of document or max_num_tokens
+            if (i == len(doc_tokenized) - 1) or (current_length >= max_num_tokens):
+                sequence_a, sequence_b, sample_in_clear_text, num_unused_segments = get_sequence_pair(
+                    doc,
+                    current_chunk,
+                    current_chunk_clear_text,
+                    all_dicts,
+                    self.tokenizer,
+                    max_num_tokens,
                 )
-                tokenized["text_b"] = tokenize_with_metadata(
-                    text_b, self.tokenizer
-                )
-                # truncate to max_seq_len
+                sequence_a = join_sentences(sequence_a)
+                sequence_b = join_sentences(sequence_b)
+
                 for seq_name in ["tokens", "offsets", "start_of_word"]:
-                    tokenized["text_a"][seq_name], tokenized["text_b"][seq_name], _ = truncate_sequences(
-                        seq_a=tokenized["text_a"][seq_name],
-                        seq_b=tokenized["text_b"][seq_name],
+                    sequence_a[seq_name], sequence_b[seq_name], _ = truncate_sequences(
+                        seq_a=sequence_a[seq_name],
+                        seq_b=sequence_b[seq_name],
                         tokenizer=self.tokenizer,
-                        max_seq_len=self.max_seq_len)
+                        max_seq_len=max_num_tokens,
+                        with_special_tokens=False,
+                        truncation_strategy="only_second",
+                    )
+                tokenized = {"text_a" : sequence_a, "text_b" : sequence_b}
                 samples.append(Sample(id=None, clear_text=sample_in_clear_text, tokenized=tokenized))
-            # if we don't do next sentence prediction, we should feed in a single sentence
-            else:
-                text_a = doc[idx]
-                sample_in_clear_text = {
-                    "text_a": text_a,
-                    "text_b": None,
-                    "nextsentence_label": None,
-                }
-                # tokenize
-                tokenized["text_a"] = tokenize_with_metadata(
-                    text_a, self.tokenizer
+
+                if len(tokenized["text_a"]["tokens"]) == 0:
+                    logger.warning(
+                        f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_a}")
+                    continue
+                if len(tokenized["text_b"]["tokens"]) == 0:
+                    logger.warning(
+                        f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_b}")
+                    continue
+
+                i -= num_unused_segments
+
+                current_chunk = []
+                current_chunk_clear_text = []
+                current_length = 0
+            i += 1
+            
+        return samples
+
+    def _dict_to_samples_no_next_sent(self, doc):
+        samples = []
+
+        for idx in range(len(doc)):
+            tokenized = {}
+            text_a = doc[idx]
+            sample_in_clear_text = {
+                "text_a": text_a,
+                "text_b": None,
+                "nextsentence_label": None,
+            }
+            # tokenize
+            tokenized["text_a"] = tokenize_with_metadata(
+                text_a, self.tokenizer
+            )
+            if len(tokenized["text_a"]["tokens"]) == 0:
+                continue
+            # truncate to max_seq_len
+            for seq_name in ["tokens", "offsets", "start_of_word"]:
+                tokenized["text_a"][seq_name], _, _ = truncate_sequences(
+                    seq_a=tokenized["text_a"][seq_name],
+                    seq_b=None,
+                    tokenizer=self.tokenizer,
+                    max_seq_len=self.max_seq_len,
                 )
-                # truncate to max_seq_len
-                for seq_name in ["tokens", "offsets", "start_of_word"]:
-                    tokenized["text_a"][seq_name], _, _ = truncate_sequences(
-                        seq_a=tokenized["text_a"][seq_name],
-                        seq_b=None,
-                        tokenizer=self.tokenizer,
-                        max_seq_len=self.max_seq_len)
-                samples.append(Sample(id=None, clear_text=sample_in_clear_text, tokenized=tokenized))
+
+            samples.append(Sample(id=None, clear_text=sample_in_clear_text, tokenized=tokenized))
+
         return samples
 
     def _sample_to_features(self, sample) -> dict:
@@ -910,7 +1073,8 @@ class SquadProcessor(Processor):
         baskets = []
         for index, document in zip(indices, dicts_tokenized):
             for q_idx, raw in enumerate(document):
-                basket = SampleBasket(raw=raw, id=f"{index}-{q_idx}")
+                # In case of Question Answering the external ID is used for document IDs
+                basket = SampleBasket(raw=raw, id=f"{index}-{q_idx}", external_id=raw.get("document_id",None))
                 baskets.append(basket)
         return baskets
 
@@ -924,6 +1088,7 @@ class SquadProcessor(Processor):
             raise Exception("It seems that your input is in rest API format. Try setting rest_api_schema=True "
                             "when calling inference from dicts")
         document_text = dictionary["context"]
+        document_id = dictionary.get("document_id",None)
 
         document_tokenized = tokenize_with_metadata(document_text, self.tokenizer)
         document_start_of_word = [int(x) for x in document_tokenized["start_of_word"]]
@@ -953,6 +1118,7 @@ class SquadProcessor(Processor):
                    "document_tokens": document_tokenized["tokens"],
                    "document_offsets": document_tokenized["offsets"],
                    "document_start_of_word": document_start_of_word,
+                   "document_id":document_id,
                    "question_text": question_text,
                    "question_tokens": question_tokenized["tokens"],
                    "question_offsets": question_tokenized["offsets"],
@@ -964,14 +1130,17 @@ class SquadProcessor(Processor):
         return raw_baskets
 
     def _convert_rest_api_dict(self, infer_dict):
-        questions = infer_dict.get("questions", ["[Missing]"])
-        text = infer_dict.get("text", "Missing!")
+        # converts dicts from inference mode to data structure used in FARM
+        questions = infer_dict.get("questions", None)
+        text = infer_dict.get("text", None)
+        document_id = infer_dict.get("document_id", None)
         qas = [{"question": q,
                 "id": i,
                 "answers": [],
                 "is_impossible": False} for i, q in enumerate(questions)]
         converted = {"qas": qas,
-                     "context": text}
+                     "context": text,
+                     "document_id":document_id}
         return converted
 
     def file_to_dicts(self, file: str) -> [dict]:
@@ -994,6 +1163,7 @@ class SquadProcessor(Processor):
                                             tokenizer=self.tokenizer,
                                             max_seq_len=self.max_seq_len)
         return features
+
 
 class RegressionProcessor(Processor):
     """
@@ -1089,7 +1259,7 @@ class RegressionProcessor(Processor):
             quotechar=self.quote_char,
             proxies=self.proxies
         )
-        
+
         # collect all labels and compute scaling stats
         train_labels = []
         for d in dicts:
@@ -1104,6 +1274,10 @@ class RegressionProcessor(Processor):
     def _dict_to_samples(self, dictionary: dict, **kwargs) -> [Sample]:
         # this tokenization also stores offsets
         tokenized = tokenize_with_metadata(dictionary["text"], self.tokenizer)
+        if len(tokenized["tokens"]) == 0:
+            text = dictionary["text"]
+            logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text}")
+            return []
         # truncate tokens, offsets and start_of_word to max_seq_len that can be handled by the model
         for seq_name in tokenized.keys():
             tokenized[seq_name], _, _ = truncate_sequences(seq_a=tokenized[seq_name], seq_b=None,

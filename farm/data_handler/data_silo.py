@@ -1,8 +1,6 @@
 import copy
 import logging
 import torch.multiprocessing as mp
-import os
-from collections import defaultdict
 from contextlib import ExitStack
 from functools import partial
 import random
@@ -18,8 +16,8 @@ from sklearn.model_selection import StratifiedKFold, KFold
 from tqdm import tqdm
 
 from farm.data_handler.dataloader import NamedDataLoader
-from farm.data_handler.processor import Processor
-from farm.data_handler.utils import grouper, stream_grouper
+from farm.data_handler.processor import Processor, BertStyleLMProcessor
+from farm.data_handler.utils import grouper
 from farm.utils import MLFlowLogger as MlLogger
 from farm.utils import log_ascii_workers, calc_chunksize
 from farm.utils import get_dict_checksum
@@ -79,6 +77,10 @@ class DataSilo:
         self.max_multiprocessing_chunksize = max_multiprocessing_chunksize
         self.caching = caching
         self.cache_path = cache_path
+
+        if len(self.processor.tasks) == 0:
+            raise Exception("No task initialized. Try initializing the processor with a metric and a label list. "
+                            "Alternatively you can add a task using Processor.add_task()")
 
         loaded_from_cache = False
         if self.caching:  # Check if DataSets are present in cache
@@ -159,11 +161,14 @@ class DataSilo:
 
             datasets = []
 
-            with tqdm(total=len(dicts), unit=' Dicts', desc="Preprocessing Dataset") as pbar:
+            desc = f"Preprocessing Dataset"
+            if filename:
+                desc += f" {filename}"
+            with tqdm(total=len(dicts), unit=' Dicts', desc=desc) as pbar:
                 for dataset, tensor_names in results:
                     datasets.append(dataset)
-                    pbar.update(multiprocessing_chunk_size)
-
+                    # update progress bar (last step can have less dicts than actual chunk_size)
+                    pbar.update(min(multiprocessing_chunk_size, pbar.total-pbar.n))
             concat_datasets = ConcatDataset(datasets)
             return concat_datasets, tensor_names
 
@@ -409,7 +414,7 @@ class DataSilo:
         logger.info("Examples in dev  : {}".format(self.counts["dev"]))
         logger.info("Examples in test : {}".format(self.counts["test"]))
         logger.info("")
-        logger.info("Max sequence length:     {}".format(max(seq_lens)))
+        logger.info("Longest sequence length observed after clipping:     {}".format(max(seq_lens)))
         logger.info("Average sequence length after clipping: {}".format(self.ave_len))
         logger.info("Proportion clipped:      {}".format(self.clipped))
         if self.clipped > 0.5:
@@ -436,7 +441,7 @@ class DataSilo:
         :param task_name: name of the task as used in the processor
         :type task_name: str
         """
-
+        
         tensor_name = self.processor.tasks[task_name]["label_tensor_name"]
         label_list = self.processor.tasks[task_name]["label_list"]
         tensor_idx = list(self.tensor_names).index(tensor_name)
@@ -455,16 +460,17 @@ class DataSilo:
         class_weights = list(compute_class_weight("balanced", np.asarray(label_list), observed_labels))
         return class_weights
 
-    def get_data_loader(self, dataset):
-        return self.loaders[dataset]
+    def get_data_loader(self, dataset_name):
+        return self.loaders[dataset_name]
 
-    def n_samples(self, dataset):
+    def n_samples(self, dataset_name):
         """
         Returns the number of samples in a given dataset.
 
-        :param dataset: Choose from train, dev or test
+        :param dataset_name: Choose from train, dev or test
+        :type dataset_name: str
         """
-        return self.counts[dataset]
+        return self.counts[dataset_name]
 
 
 class StreamingDataSilo:
@@ -493,7 +499,38 @@ class StreamingDataSilo:
         :type dataloader_workers: int
         """
 
-        self.loaders = defaultdict(lambda: None)
+        self.processor = processor
+        self.batch_size = batch_size
+        self.dataloader_workers = dataloader_workers
+
+    def get_data_loader(self, dataset_name):
+        """
+        Returns a new instance of dataloader for the given dataset.
+
+        The dataloader lazily yields from Iterable DataSets. After a complete iteration
+        over the input data, the generators gets exhausted. So, for instance, in the 
+        case of model training, a new train dataloader must be used for each train epoch.
+
+        :param dataset_name: 'train', 'dev', or 'test' set.
+        :type dataset_name: str
+        """
+        filename = None
+        if dataset_name == "train":
+            filename = self.processor.train_filename
+        elif dataset_name == "dev":
+            if self.processor.dev_split > 0.0:
+                raise NotImplemented(
+                            "StreamingDataSilo does not have dev_split implemented. "
+                            "To use dev data, supply a dev filename when creating the Processor."
+                )
+            elif self.processor.dev_filename:
+                filename = self.processor.dev_filename
+        elif dataset_name == "test":
+            if self.processor.test_filename:
+                filename = self.processor.test_filename
+
+        if not filename:
+            return None
 
         #  Batching:
         #
@@ -509,50 +546,16 @@ class StreamingDataSilo:
         #  Since the batching is now handled within _StreamingDataSet, we disable the batching on DataLoader side
         #  by initializing the data loader with batch_size as 1.
 
-        # Create train DataLoader
         data_set = _StreamingDataSet(
-            processor=processor,
-            filepath=processor.data_dir / processor.train_filename,
-            batch_size=batch_size,
-            dataloader_workers=dataloader_workers,
+            processor=self.processor,
+            filepath=self.processor.data_dir / filename,
+            batch_size=self.batch_size,
+            dataloader_workers=self.dataloader_workers,
         )
-        self.loaders["train"] = NamedDataLoader(
-            dataset=data_set, batch_size=1, num_workers=dataloader_workers, pin_memory=True
+        data_loader = NamedDataLoader(
+            dataset=data_set, batch_size=1, num_workers=self.dataloader_workers, pin_memory=True
         )
-
-        # Create dev DataLoader
-        if processor.dev_filename:
-            data_set = _StreamingDataSet(
-                processor=processor,
-                filepath=processor.data_dir / processor.dev_filename,
-                batch_size=batch_size,
-                dataloader_workers=dataloader_workers,
-            )
-            self.loaders["dev"] = NamedDataLoader(
-                dataset=data_set, batch_size=1, num_workers=dataloader_workers, pin_memory=True
-            )
-        elif processor.dev_split > 0.0:
-            raise NotImplemented(
-                "StreamingDataSilo does not have dev_split implemented. "
-                "To use dev data, supply a separate dev filename."
-            )
-
-        # Create test DataLoader
-        if processor.test_filename:
-            data_set = _StreamingDataSet(
-                processor=processor,
-                filepath=processor.data_dir / processor.test_filename,
-                batch_size=batch_size,
-                dataloader_workers=dataloader_workers,
-            )
-            self.loaders["test"] = NamedDataLoader(
-                dataset=data_set, batch_size=1, num_workers=dataloader_workers, pin_memory=True
-            )
-
-        self.processor = processor
-
-    def get_data_loader(self, dataset):
-        return self.loaders[dataset]
+        return data_loader
 
 
 class _StreamingDataSet(IterableDataset):
@@ -573,25 +576,33 @@ class _StreamingDataSet(IterableDataset):
         self.filepath = filepath
         self.dataloader_workers = dataloader_workers
 
+        # calculate number of samples for __len__()
+        total_lines = sum(1 for line in open(filepath, encoding="utf-8"))
+        empty_lines = sum(1 if line == "\n" else 0 for line in open(filepath, encoding="utf-8"))
+        self.n_samples = total_lines - (2 * empty_lines)
+
         self.file_to_dicts_generator = processor.file_to_dicts(filepath)
+
+    def __len__(self):
+        return self.n_samples
 
     def __iter__(self):
         #  With IterableDataset, the same __iter__ is copied over to the multiple workers of
         #  a Dataloader. Hence, we need to configure the __iter__ to not yield duplicated data
         #  when more than 1 workers are used.
         #
-        #  To avoid duplicates, we need to split the input dicts between the workers. The
-        #  stream_grouper() converts a dict generator given as input and yields only the
+        #  To avoid duplicates, we need to split the input dicts between the workers.
+        #  The grouper() converts a dict generator given as input and yields only the
         #  dicts that are to be processed by the given worker_id.
         #
-        #  For instance, consider input as [dictA, dictB, dictC, ...], then the stream_grouper
+        #  For instance, consider input as [dictA, dictB, dictC, ...], then the grouper
         #  (with n=2) will return, [[dictA, dictB], [dictE, dictF] ...] for worker 1 and
         #  [[dictC, dictD], [dictG, dictH] ...] for worker 2.
 
         if self.dataloader_workers > 1:
             worker_info = torch.utils.data.get_worker_info()
             worker_id = worker_info.id
-            dicts = stream_grouper(
+            dicts = grouper(
                 self.file_to_dicts_generator, n=10, worker_id=worker_id, total_workers=self.dataloader_workers
             )
         else:
@@ -601,6 +612,8 @@ class _StreamingDataSet(IterableDataset):
 
         batch = []
         for datasets, tensor_names in results:
+            if not datasets:
+                continue
             self.tensor_names = tensor_names
             for ds in datasets:
                 batch.append(ds)
@@ -619,6 +632,10 @@ class _StreamingDataSet(IterableDataset):
         :return: PyTorch Dataset
         """
         dicts = [d[1] for d in chunk]
+        # need at least 2 documents to sample random sentences from
+        if len(dicts) < 2 and type(self.processor) == BertStyleLMProcessor:
+            logger.info("Skipping a dict chunk as it contains less than 2 documents ...")
+            return None, None
         indices = [x[0] for x in chunk]
         datasets, tensor_names = self.processor.dataset_from_dicts(dicts=dicts, indices=indices)
         return datasets, tensor_names

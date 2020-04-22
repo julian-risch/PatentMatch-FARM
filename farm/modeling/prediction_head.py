@@ -65,6 +65,8 @@ class PredictionHead(nn.Module):
         :param head_num: Which head to save
         :type head_num: int
         """
+        # updating config in case the parameters have been changed
+        self.generate_config()
         output_config_file = Path(save_dir) / f"prediction_head_{head_num}_config.json"
         with open(output_config_file, "w") as file:
             json.dump(self.config, file)
@@ -94,7 +96,7 @@ class PredictionHead(nn.Module):
         self.config = config
 
     @classmethod
-    def load(cls, config_file, strict=True):
+    def load(cls, config_file, strict=True, load_weights=True):
         """
         Loads a Prediction Head. Infers the class of prediction head from config_file.
 
@@ -109,9 +111,10 @@ class PredictionHead(nn.Module):
         """
         config = json.load(open(config_file))
         prediction_head = cls.subclasses[config["name"]](**config)
-        model_file = cls._get_model_file(config_file=config_file)
-        logger.info("Loading prediction head from {}".format(model_file))
-        prediction_head.load_state_dict(torch.load(model_file, map_location=torch.device("cpu")), strict=strict)
+        if load_weights:
+            model_file = cls._get_model_file(config_file=config_file)
+            logger.info("Loading prediction head from {}".format(model_file))
+            prediction_head.load_state_dict(torch.load(model_file, map_location=torch.device("cpu")), strict=strict)
         return prediction_head
 
     def logits_to_loss(self, logits, labels):
@@ -293,13 +296,16 @@ class TextClassificationHead(PredictionHead):
     @classmethod
     def load(cls, pretrained_model_name_or_path):
         """
-        Load a prediction head from a saved FARM or transformers model. If `pretrained_model_name_or_path`
-        is not a local path, we will try to resolve it with a public model hub (https://huggingface.co/models)
+        Load a prediction head from a saved FARM or transformers model. `pretrained_model_name_or_path`
+        can be one of the following:
+        a) Local path to a FARM prediction head config (e.g. my-bert/prediction_head_0_config.json)
+        b) Local path to a Transformers model (e.g. my-bert)
+        c) Name of a public model from https://huggingface.co/models (e.g. distilbert-base-uncased-distilled-squad)
+
 
         :param pretrained_model_name_or_path: local path of a saved model or name of a publicly available model.
-                                              Exemplary names:
-                                              - distilbert-base-uncased-distilled-squad
-                                              - bert-large-uncased-whole-word-masking-finetuned-squad
+                                              Exemplary public name:
+                                              - deepset/bert-base-german-cased-hatespeech-GermEval18Coarse
 
                                               See https://huggingface.co/models for full list
 
@@ -309,7 +315,7 @@ class TextClassificationHead(PredictionHead):
                 and "config.json" in pretrained_model_name_or_path \
                 and "prediction_head" in pretrained_model_name_or_path:
             # a) FARM style
-            super(TextClassificationHead, cls).load(pretrained_model_name_or_path)
+            head = super(TextClassificationHead, cls).load(pretrained_model_name_or_path)
         else:
             # b) transformers style
             # load all weights from model
@@ -321,6 +327,7 @@ class TextClassificationHead(PredictionHead):
             del full_model
 
         return head
+
     def forward(self, X):
         logits = self.feed_forward(X)
         return logits
@@ -355,6 +362,9 @@ class TextClassificationHead(PredictionHead):
         preds = self.logits_to_preds(logits)
         probs = self.logits_to_probs(logits, return_class_probs)
         contexts = [sample.clear_text["text"] for sample in samples]
+        contexts_b = [sample.clear_text["text_b"] for sample in samples if "text_b" in  sample.clear_text]
+        if len(contexts_b) != 0:
+            contexts = ["|".join([a, b]) for a,b in zip(contexts, contexts_b)]
 
         assert len(preds) == len(probs) == len(contexts)
 
@@ -525,12 +535,17 @@ class TokenClassificationHead(PredictionHead):
     @classmethod
     def load(cls, pretrained_model_name_or_path):
         """
-        Load a prediction head from a saved FARM or transformers model. If `pretrained_model_name_or_path`
-        is not a local path, we will try to resolve it with a public model hub (https://huggingface.co/models)
+        Load a prediction head from a saved FARM or transformers model. `pretrained_model_name_or_path`
+        can be one of the following:
+        a) Local path to a FARM prediction head config (e.g. my-bert/prediction_head_0_config.json)
+        b) Local path to a Transformers model (e.g. my-bert)
+        c) Name of a public model from https://huggingface.co/models (e.g.bert-base-cased-finetuned-conll03-english)
+
 
         :param pretrained_model_name_or_path: local path of a saved model or name of a publicly available model.
-                                              Examplary names:
-                                              - asdas
+                                              Exemplary public names:
+                                              - bert-base-cased-finetuned-conll03-english
+
                                               See https://huggingface.co/models for full list
 
         """
@@ -539,7 +554,7 @@ class TokenClassificationHead(PredictionHead):
                 and "config.json" in pretrained_model_name_or_path \
                 and "prediction_head" in pretrained_model_name_or_path:
             # a) FARM style
-            return super(TokenClassificationHead, cls).load(pretrained_model_name_or_path)
+            head = super(TokenClassificationHead, cls).load(pretrained_model_name_or_path)
         else:
             # b) transformers style
             # load all weights from model
@@ -549,7 +564,7 @@ class TokenClassificationHead(PredictionHead):
             # transfer weights for head from full model
             head.feed_forward.feed_forward[0].load_state_dict(full_model.classifier.state_dict())
             del full_model
-            return head
+        return head
 
 
     def forward(self, X):
@@ -708,6 +723,21 @@ class BertLMHead(PredictionHead):
 
     @classmethod
     def load(cls, pretrained_model_name_or_path, n_added_tokens=0):
+        """
+        Load a prediction head from a saved FARM or transformers model. `pretrained_model_name_or_path`
+        can be one of the following:
+        a) Local path to a FARM prediction head config (e.g. my-bert/prediction_head_0_config.json)
+        b) Local path to a Transformers model (e.g. my-bert)
+        c) Name of a public model from https://huggingface.co/models (e.g.bert-base-cased)
+
+
+        :param pretrained_model_name_or_path: local path of a saved model or name of a publicly available model.
+                                              Exemplary public names:
+                                              - bert-base-cased
+
+                                              See https://huggingface.co/models for full list
+
+        """
 
         if os.path.exists(pretrained_model_name_or_path) \
                 and "config.json" in pretrained_model_name_or_path \
@@ -717,7 +747,7 @@ class BertLMHead(PredictionHead):
                 #TODO resize prediction head decoder for custom vocab
                 raise NotImplementedError("Custom vocab not yet supported for model loading from FARM files")
 
-            super(BertLMHead, cls).load(pretrained_model_name_or_path)
+            head = super(BertLMHead, cls).load(pretrained_model_name_or_path)
         else:
             # b) pytorch-transformers style
             # load weights from bert model
@@ -798,22 +828,30 @@ class BertLMHead(PredictionHead):
 class NextSentenceHead(TextClassificationHead):
     """
     Almost identical to a TextClassificationHead. Only difference: we can load the weights from
-     a pretrained language model that was saved in the pytorch-transformers style (all in one model).
+     a pretrained language model that was saved in the Transformers style (all in one model).
     """
     @classmethod
     def load(cls, pretrained_model_name_or_path):
+        """
+        Load a prediction head from a saved FARM or transformers model. `pretrained_model_name_or_path`
+        can be one of the following:
+        a) Local path to a FARM prediction head config (e.g. my-bert/prediction_head_0_config.json)
+        b) Local path to a Transformers model (e.g. my-bert)
+        c) Name of a public model from https://huggingface.co/models (e.g.bert-base-cased)
 
+
+        :param pretrained_model_name_or_path: local path of a saved model or name of a publicly available model.
+                                              Exemplary public names:
+                                              - bert-base-cased
+
+                                              See https://huggingface.co/models for full list
+
+        """
         if os.path.exists(pretrained_model_name_or_path) \
                 and "config.json" in pretrained_model_name_or_path \
                 and "prediction_head" in pretrained_model_name_or_path:
-            config_file = os.path.exists(pretrained_model_name_or_path)
             # a) FARM style
-            #TODO validate saving/loading after switching to processor.tasks
-            model_file = cls._get_model_file(config_file)
-            config = json.load(open(config_file))
-            prediction_head = cls(**config)
-            logger.info("Loading prediction head from {}".format(model_file))
-            prediction_head.load_state_dict(torch.load(model_file, map_location=torch.device("cpu")))
+            head = super(NextSentenceHead, cls).load(pretrained_model_name_or_path)
         else:
             # b) pytorch-transformers style
             # load weights from bert model
@@ -859,20 +897,34 @@ class QuestionAnsweringHead(PredictionHead):
     A question answering head predicts the start and end of the answer on token level.
     """
 
-    def __init__(self, layer_dims=[768,2], task_name="question_answering", no_ans_threshold=0.0, context_window_size=100, n_best=5, **kwargs):
+    def __init__(self, layer_dims=[768,2],
+                 task_name="question_answering",
+                 no_ans_boost=0.0,
+                 context_window_size=100,
+                 n_best=5,
+                 n_best_per_sample=1,
+                 **kwargs):
         """
         :param layer_dims: dimensions of Feed Forward block, e.g. [768,2], for adjusting to BERT embedding. Output should be always 2
         :type layer_dims: List[Int]
         :param kwargs: placeholder for passing generic parameters
         :type kwargs: object
-        :param no_ans_threshold: no_ans_threshold is how much greater the no_answer logit needs to be over the pos_answer in order to be chosen
-        :type no_ans_threshold: float
+        :param no_ans_boost: How much the no_answer logit is boosted/increased.
+                             The higher the value, the more likely a "no answer possible given the input text" is returned by the model
+        :type no_ans_boost: float
         :param context_window_size: The size, in characters, of the window around the answer span that is used when displaying the context around the answer.
         :type context_window_size: int
-        :param n_best: The number of candidate positive answer spans to consider from each passage. Same value used as the number of candidates to be considered on document level.
+        :param n_best: The number of positive answer spans for each document.
         :type n_best: int
+        :param n_best_per_sample: num candidate answer spans to consider from each passage. Each passage also returns "no answer" info.
+                                  This is decoupled from n_best on document level, since predictions on passage level are very similar.
+                                  It should have a low value
+        :type n_best_per_sample: int
         """
         super(QuestionAnsweringHead, self).__init__()
+        if kwargs is not None:
+            logger.warning(f"Some unused parameters are passed to the QuestionAnsweringHead. "
+                           f"Might not be a problem. Params: {json.dumps(kwargs)}")
         self.layer_dims = layer_dims
         assert self.layer_dims[-1] == 2
         self.feed_forward = FeedForwardBlock(self.layer_dims)
@@ -883,20 +935,25 @@ class QuestionAnsweringHead(PredictionHead):
             "span_classification"
         )  # predicts start and end token of answer
         self.task_name = task_name
-        self.generate_config()
-        self.no_ans_threshold = no_ans_threshold
+        self.no_ans_boost = no_ans_boost
         self.context_window_size = context_window_size
         self.n_best = n_best
+        self.n_best_per_sample = n_best_per_sample
+        self.generate_config()
 
 
     @classmethod
     def load(cls, pretrained_model_name_or_path):
         """
-        Load a prediction head from a saved FARM or transformers model. If `pretrained_model_name_or_path`
-        is not a local path, we will try to resolve it with a public model hub (https://huggingface.co/models)
+        Load a prediction head from a saved FARM or transformers model. `pretrained_model_name_or_path`
+        can be one of the following:
+        a) Local path to a FARM prediction head config (e.g. my-bert/prediction_head_0_config.json)
+        b) Local path to a Transformers model (e.g. my-bert)
+        c) Name of a public model from https://huggingface.co/models (e.g. distilbert-base-uncased-distilled-squad)
+
 
         :param pretrained_model_name_or_path: local path of a saved model or name of a publicly available model.
-                                              Exemplary names:
+                                              Exemplary public names:
                                               - distilbert-base-uncased-distilled-squad
                                               - bert-large-uncased-whole-word-masking-finetuned-squad
 
@@ -920,7 +977,6 @@ class QuestionAnsweringHead(PredictionHead):
             del full_qa_model
 
         return head
-
 
     def forward(self, X):
         """
@@ -989,6 +1045,25 @@ class QuestionAnsweringHead(PredictionHead):
         end_matrix = end_logits.unsqueeze(1).expand(-1, max_seq_len, -1)
         start_end_matrix = start_matrix + end_matrix
 
+        # disqualify answers where end < start
+        # (set the lower triangular matrix to low value, excluding diagonal)
+        indices = torch.tril_indices(max_seq_len, max_seq_len, offset=-1, device=start_end_matrix.device)
+        start_end_matrix[:, indices[0][:], indices[1][:]] = -999
+
+        # disqualify answers where start=0, but end != 0
+        start_end_matrix[:, 0, 1:] = -999
+
+
+        # TODO continue vectorization of valid_answer_idxs
+        # # disqualify where answers < seq_2_start_t and idx != 0
+        # # disqualify where answer falls into padding
+        # # seq_2_start_t can be different when 2 different questions are handled within one batch
+        # # n_non_padding can be different on sample level, too
+        # for i in range(batch_size):
+        #     start_end_matrix[i, 1:seq_2_start_t[i], 1:seq_2_start_t[i]] = -888
+        #     start_end_matrix[i, n_non_padding[i]-1:, n_non_padding[i]-1:] = -777
+
+
         # Sort the candidate answers by their score. Sorting happens on the flattened matrix.
         # flat_sorted_indices.shape: (batch_size, max_seq_len^2, 1)
         flat_scores = start_end_matrix.view(batch_size, -1)
@@ -1003,15 +1078,17 @@ class QuestionAnsweringHead(PredictionHead):
 
         # Get the n_best candidate answers for each sample that are valid (via some heuristic checks)
         for sample_idx in range(batch_size):
-            sample_top_n = self.get_top_candidates(sorted_candidates[sample_idx], start_end_matrix[sample_idx],
-                                                   n_non_padding[sample_idx], max_answer_length,
-                                                   seq_2_start_t[sample_idx])
+            sample_top_n = self.get_top_candidates(sorted_candidates[sample_idx],
+                                                           start_end_matrix[sample_idx],
+                                                           n_non_padding[sample_idx].item(),
+                                                           max_answer_length,
+                                                           seq_2_start_t[sample_idx].item())
             all_top_n.append(sample_top_n)
 
         return all_top_n
 
     def get_top_candidates(self, sorted_candidates, start_end_matrix,
-                           n_non_padding, max_answer_length, seq_2_start_t, n_best=5):
+                           n_non_padding, max_answer_length, seq_2_start_t):
         """ Returns top candidate answers. Operates on a matrix of summed start and end logits. This matrix corresponds
         to a single sample (includes special tokens, question tokens, passage tokens). This method always returns a
         list of len n_best + 1 (it is comprised of the n_best positive answers along with the one no_answer)"""
@@ -1022,7 +1099,7 @@ class QuestionAnsweringHead(PredictionHead):
 
         # Iterate over all candidates and break when we have all our n_best candidates
         for candidate_idx in range(n_candidates):
-            if len(top_candidates) == n_best:
+            if len(top_candidates) == self.n_best_per_sample:
                 break
             else:
                 # Retrieve candidate's indices
@@ -1032,9 +1109,8 @@ class QuestionAnsweringHead(PredictionHead):
                 if start_idx == 0 and end_idx == 0:
                     continue
                 # Check that the candidate's indices are valid and save them if they are
-                score = start_end_matrix[start_idx, end_idx].item()
                 if self.valid_answer_idxs(start_idx, end_idx, n_non_padding, max_answer_length, seq_2_start_t):
-                    # score = start_end_matrix[start_idx, end_idx].item()
+                    score = start_end_matrix[start_idx, end_idx].item()
                     top_candidates.append([start_idx, end_idx, score])
 
         no_answer_score = start_end_matrix[0, 0].item()
@@ -1048,7 +1124,7 @@ class QuestionAnsweringHead(PredictionHead):
         should be on sample/passage level (special tokens + question_tokens + passag_tokens)
         and not document level"""
 
-        # This function can seriously slow down inferencing and eval
+        # This function can seriously slow down inferencing and eval. In the future this function will be completely vectorized
         # Continue if start or end label points to a padding token
         if start_idx < seq_2_start_t and start_idx != 0:
             return False
@@ -1060,41 +1136,40 @@ class QuestionAnsweringHead(PredictionHead):
             return False
         if end_idx >= n_non_padding - 1:
             return False
-        # Check if start comes after end
-        if end_idx < start_idx:
-            return False
-        # If one of the two indices is 0, the other must also be 0
-        if start_idx == 0 and end_idx != 0:
-            return False
-        if start_idx != 0 and end_idx == 0:
-            return False
+
+        # # Check if start comes after end
+        # # Handled on matrix level by: start_end_matrix[:, indices[0][1:], indices[1][1:]] = -999
+        # if end_idx < start_idx:
+        #     return False
+
+        # # If one of the two indices is 0, the other must also be 0
+        # # Handled on matrix level by setting: start_end_matrix[:, 0, 1:] = -999
+        # if start_idx == 0 and end_idx != 0:
+        #     return False
+        # if start_idx != 0 and end_idx == 0:
+        #     return False
 
         length = end_idx - start_idx + 1
         if length > max_answer_length:
             return False
         return True
 
-    def formatted_preds(self, logits, baskets, rest_api_schema=False):
-        """ Takes a list of logits, each corresponding to one sample, and converts them into document level predictions.
-        Leverages information in the SampleBaskets. Assumes that we are being passed logits from ALL samples in the one
-        SampleBasket i.e. all passages of a document. """
+    def formatted_preds(self, logits, preds_p, baskets, rest_api_schema=False):
+        """ Takes a list of predictions, each corresponding to one sample, and converts them into document level
+        predictions. Leverages information in the SampleBaskets. Assumes that we are being passed predictions from
+        ALL samples in the one SampleBasket i.e. all passages of a document. Logits should be None, because we have
+        already converted the logits to predictions before calling formatted_preds.
+        """
 
         # Unpack some useful variables
         # passage_start_t is the token index of the passage relative to the document (usually a multiple of doc_stride)
         # seq_2_start_t is the token index of the first token in passage relative to the input sequence (i.e. number of
         # special tokens and question tokens that come before the passage tokens)
+        assert logits is None, "Logits are not None, something is passed wrongly into formatted_preds() in infer.py"
         samples = [s for b in baskets for s in b.samples]
         ids = [s.id.split("-") for s in samples]
         passage_start_t = [s.features[0]["passage_start_t"] for s in samples]
         seq_2_start_t = [s.features[0]["seq_2_start_t"] for s in samples]
-
-        # Prepare tensors
-        logits = torch.stack(logits)
-        padding_mask = torch.tensor([s.features[0]["padding_mask"] for s in samples], dtype=torch.long)
-        start_of_word = torch.tensor([s.features[0]["start_of_word"] for s in samples], dtype=torch.long)
-
-        # Return n + 1 predictions per passage / sample
-        preds_p = self.logits_to_preds(logits, padding_mask, start_of_word, seq_2_start_t)
 
         # Aggregate passage level predictions to create document level predictions.
         # This method assumes that all passages of each document are contained in preds_p
@@ -1103,7 +1178,7 @@ class QuestionAnsweringHead(PredictionHead):
         preds_d = self.aggregate_preds(preds_p, passage_start_t, ids, seq_2_start_t)
         assert len(preds_d) == len(baskets)
 
-        # Separate top_preds list from the no_ans_gap float
+        # Separate top_preds list from the no_ans_gap float.
         top_preds, no_ans_gaps = zip(*preds_d)
 
         # Takes document level prediction spans and returns string predictions
@@ -1153,7 +1228,7 @@ class QuestionAnsweringHead(PredictionHead):
                         "question_id": id,
                         "ground_truth": None,
                         "answers": answers,
-                        "no_ans_gap": no_ans_gap
+                        "no_ans_gap": no_ans_gap # Add no_ans_gap to current no_ans_boost for switching top prediction
                     }
                 ],
             }
@@ -1164,7 +1239,8 @@ class QuestionAnsweringHead(PredictionHead):
         ret = []
         token_offsets = basket.raw["document_offsets"]
         clear_text = basket.raw["document_text"]
-        document_id = basket.id.split("-")[0]
+        # In the context of QA, the external ID of our general Basket becomes a document ID again
+        document_id = basket.external_id
 
         # iterate over the top_n predictions of the one document
         for string, start_t, end_t, score in top_preds:
@@ -1185,8 +1261,7 @@ class QuestionAnsweringHead(PredictionHead):
 
     def create_context(self, ans_start_ch, ans_end_ch, clear_text):
         if ans_start_ch == 0 and ans_end_ch == 0:
-            context_start_ch = 0
-            context_end_ch = 0
+            return None, 0, 0
         else:
             len_text = len(clear_text)
             midpoint = int((ans_end_ch - ans_start_ch) / 2) + ans_start_ch
@@ -1209,7 +1284,7 @@ class QuestionAnsweringHead(PredictionHead):
 
         # If it is a no_answer prediction
         if start_t == -1 and end_t == -1:
-            return "", 0, 0
+            return None, 0, 0
 
         n_tokens = len(token_offsets)
 
@@ -1306,8 +1381,7 @@ class QuestionAnsweringHead(PredictionHead):
         """ This function contains the logic for choosing the best answers from each passage. In the end, it
         returns the n_best predictions on the document level. """
 
-        # Initialize some variables
-        document_no_answer = True
+        # Initialize variables
         passage_no_answer = []
         passage_best_score = []
         no_answer_scores = []
@@ -1316,16 +1390,11 @@ class QuestionAnsweringHead(PredictionHead):
         for sample_idx, sample_preds in enumerate(preds):
             best_pred = sample_preds[0]
             best_pred_score = best_pred[2]
-            no_answer_score = self.get_no_answer_score(sample_preds)
-            no_answer = no_answer_score - self.no_ans_threshold > best_pred_score
+            no_answer_score = self.get_no_answer_score(sample_preds) + self.no_ans_boost
+            no_answer = no_answer_score > best_pred_score
             passage_no_answer.append(no_answer)
             no_answer_scores.append(no_answer_score)
             passage_best_score.append(best_pred_score)
-
-        # If a positive prediction is higher than the no_answer score in one of the passages then the top
-        # document prediction should be a positive answer
-        if False in passage_no_answer:
-            document_no_answer = False
 
         # Get all predictions in flattened list and sort by score
         pos_answers_flat = [(start, end, score)
@@ -1333,20 +1402,27 @@ class QuestionAnsweringHead(PredictionHead):
                             for start, end, score in passage_preds
                             if not (start == -1 and end == -1)]
 
+        # TODO add switch for more variation in answers, e.g. if varied_ans then never return overlapping answers
         pos_answer_dedup = self.deduplicate(pos_answers_flat)
-        pos_answers_sorted = sorted(pos_answer_dedup, key=lambda x: x[2], reverse=True)
-        pos_answers_reduced = pos_answers_sorted[:self.n_best]
-        no_answer_pred = [-1, -1, max(no_answer_scores)]
 
-        # This is how big the no_answer threshold needs to be to change a no_answer to a pos answer
-        #  (or vice versa). This can in future be used to train the threshold value
-        no_ans_gap = max([nas - pbs for nas, pbs in zip(no_answer_scores, passage_best_score)])
+        # This is how much no_ans_boost needs to change to turn a no_answer to a positive answer (or vice versa)
+        no_ans_gap = -min([nas - pbs for nas, pbs in zip(no_answer_scores, passage_best_score)])
 
-        if document_no_answer:
-            n_preds = [no_answer_pred] + pos_answers_reduced[:-1]
-        else:
-            n_preds = pos_answers_reduced
-        return n_preds, no_ans_gap
+        # "no answer" scores and positive answers scores are difficult to compare, because
+        # + a positive answer score is related to a specific text span
+        # - a "no answer" score is related to all input texts
+        # Thus we compute the "no answer" score relative to the best possible answer and adjust it by
+        # the most significant difference between scores.
+        # Most significant difference: change top prediction from "no answer" to answer (or vice versa)
+        best_overall_positive_score = max(x[2] for x in pos_answer_dedup)
+        no_answer_pred = [-1, -1, best_overall_positive_score - no_ans_gap]
+
+
+        # Add no answer to positive answers, sort the order and return the n_best
+        n_preds = [no_answer_pred] + pos_answer_dedup
+        n_preds_sorted = sorted(n_preds, key=lambda x: x[2], reverse=True)
+        n_preds_reduced = n_preds_sorted[:self.n_best]
+        return n_preds_reduced, no_ans_gap
 
     @staticmethod
     def deduplicate(flat_pos_answers):

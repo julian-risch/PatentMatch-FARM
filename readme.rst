@@ -8,8 +8,8 @@
 
 (**F**\ ramework for **A**\ dapting **R**\ epresentation **M**\ odels)
 
-.. image:: https://travis-ci.org/deepset-ai/FARM.svg?branch=master
-	:target: https://travis-ci.org/deepset-ai/FARM
+.. image:: https://dev.azure.com/deepset/FARM/_apis/build/status/deepset-ai.FARM?branchName=master
+	:target: https://dev.azure.com/deepset/FARM/_build
 	:alt: Build
 
 .. image:: https://img.shields.io/github/release/deepset-ai/farm
@@ -35,7 +35,7 @@
 What is it?
 ############
 FARM makes **Transfer Learning** with BERT & Co **simple, fast and enterprise-ready**.
-It's build upon `transformers <https://github.com/huggingface/pytorch-transformers>`_ and provides additional features to simplify the life of developers:
+It's built upon `transformers <https://github.com/huggingface/pytorch-transformers>`_ and provides additional features to simplify the life of developers:
 Parallelized preprocessing, highly modular design, multi-task learning, experiment tracking, easy debugging and close integration with AWS SageMaker.
 
 With FARM you can build **fast proof-of-concepts** for tasks like text classification, NER or question answering and **transfer them easily into production**.
@@ -84,14 +84,18 @@ Core features
 +------------------------------+-------------------+-------------------+-------------------+-------------------+-------------------+-------------------+
 | LM from scratch (beta)       | x                 |                   |                   |                   |                   |                   |
 +------------------------------+-------------------+-------------------+-------------------+-------------------+-------------------+-------------------+
+| Text Pair Classification     | x                 |  x                |  x                |  x                |  x                |  x                |
++------------------------------+-------------------+-------------------+-------------------+-------------------+-------------------+-------------------+
+| Passage Ranking              | x                 |  x                |  x                |  x                |  x                |  x                |
++------------------------------+-------------------+-------------------+-------------------+-------------------+-------------------+-------------------+
 
-
+****NEW**** Interested in doing Question Answering at scale? Checkout `Haystack <https://github.com/deepset-ai/haystack>`_!
 
 Resources
 ##########
 **Docs**
 
-`Full documentation <https://farm.deepset.ai>`_
+`Online documentation <https://farm.deepset.ai>`_
 
 **Tutorials**
 
