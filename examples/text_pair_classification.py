@@ -54,7 +54,7 @@ def text_pair_classification():
                                                 test_filename="test.tsv",
                                                 dev_filename="dev.tsv",
                                                 #dev_split = 0.5,
-                                                data_dir=Path("../data/patent"),
+                                                data_dir=Path("/mnt/data/datasets/patents/patent_matching"),
                                                 tasks={"text_classification"},
                                                 delimiter="\t")
 
