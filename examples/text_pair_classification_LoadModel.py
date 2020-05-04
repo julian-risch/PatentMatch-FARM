@@ -77,12 +77,9 @@ def text_pair_classification():
                                              class_weights=[0.56,0.44] # Todo: Reihenfolge checken
                                              )
 
-    model = AdaptiveModel(
-        language_model=language_model,
-        prediction_heads=[prediction_head],
-        embeds_dropout_prob=0.1,
-        lm_output_types=["per_sequence_continuous"],
-        device=device)
+    model = AdaptiveModel.load("saved_models/text_pair_classification_model", device=device)
+
+
 
     # 5. Create an optimizer
     model, optimizer, lr_schedule = initialize_optimizer(
@@ -97,7 +94,7 @@ def text_pair_classification():
     earlystopping = EarlyStopping(
         #metric="f1_weighted", mode="max",  # use f1_macro from the dev evaluator of the trainer
         metric="loss", mode="min",   # use loss from the dev evaluator of the trainer
-        save_dir=Path("saved_models/text_pair_classification_model"),  # where to save the best model
+        save_dir=Path("saved_models/text_pair_classification_model_Tuned"),  # where to save the best model
         patience=2    # number of evaluations to wait for improvement before terminating the training
     )
 
