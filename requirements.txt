@@ -1,0 +1,30 @@
+# basics
+setuptools
+wheel
+# PyTorch
+torch==1.4.0
+# progress bars in model download and training scripts
+tqdm
+# Accessing files from S3 directly.
+boto3
+# Used for downloading models over HTTP
+requests
+# Scipy & sklearn for stats in run_classifier
+scipy>=1.3.2
+sklearn
+# Metrics or logging related
+seqeval
+mlflow==1.0.0
+# huggingface repository
+transformers==2.7.0
+# accessing dictionary elements with dot notation
+dotmap==1.3.0
+# for inference-rest-apis
+Werkzeug==0.16.1
+flask
+flask-restplus
+flask-cors
+# optional: for inference with fasttext
+#fasttext==0.9.1
+dill # pickle extension for (de-)serialization
+onnxruntime  # Inference with ONNX models. Install onnxruntime-gpu for Inference on GPUs

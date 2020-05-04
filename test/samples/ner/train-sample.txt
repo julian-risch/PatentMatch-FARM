@@ -1,0 +1,48 @@
+-DOCSTART- -X- -X- -X- O
+
+Ereignis Ereignis NN I-NC O
+und und KON O O
+Erzählung Erzählung NN I-NC O
+oder oder KON I-NC O
+: : $. O O
+
+Albrecht Albrecht NE B-NC I-PER
+Lehmann Lehmann NE I-NC I-PER
+läßt lassen VVFIN I-VC O
+Flüchtlinge Flüchtling NN I-NC O
+und und KON O O
+Vertriebene Vertriebene NN I-NC O
+in in APPR I-PC O
+Westdeutschland Westdeutschland NE I-NC I-LOC
+, , $, I-NC O
+1945-1990 @card@ CARD I-NC O
+, , $, O O
+zu zu APPR I-PC O
+Wort Wort NN I-NC O
+kommen kommen VVFIN I-VC O
+
+Einwanderungsfragen Einwanderungsfrage|Einwanderungsfragen NN I-NC O
+haben haben VAFIN I-VC O
+in in APPR I-PC O
+Deutschland Deutschland NE I-NC I-LOC
+in in APPR I-PC O
+den d ART I-NC O
+letzten letzt ADJA I-NC O
+Monaten Monat NN I-NC O
+Politik Politik NN B-NC O
+und und KON O O
+Medien Medium NN I-NC O
+beherrscht beherrschen VVPP I-VC O
+. . $. O O
+
+in in APPR I-PC O
+Westdeutschland Westdeutschland NE I-NC I-LOC
+von von APPR I-PC O
+1945 1945 CARD I-NC O
+bis bis APPR I-PC O
+1990 1990 CARD I-NC O
+Aufmerksamkeit Aufmerksamkeit NN I-NC O
+zu zu PTKZU I-VC O
+erregen erregen VVINF I-VC O
+. . $. O O
+
