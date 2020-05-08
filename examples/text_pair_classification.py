@@ -14,6 +14,7 @@ from farm.modeling.tokenization import Tokenizer
 from farm.train import Trainer
 from farm.utils import set_all_seeds, MLFlowLogger, initialize_device_settings
 from farm.train import Trainer, EarlyStopping
+import pandas as pd
 
 
 
@@ -36,6 +37,13 @@ def text_pair_classification():
     evaluate_every = 500
     lang_model = "bert-base-cased"
     label_list = ["0", "1"]
+
+    n_batches,class_weights=calc_n_batches_and_classweights(batch_size)
+    print("calculated n_batches")
+    print(n_batches)
+
+    print("calculated classweights")
+    print(class_weights)
 
     # 1.Create a tokenizer
     tokenizer = Tokenizer.load(
@@ -74,7 +82,7 @@ def text_pair_classification():
     language_model = LanguageModel.load(lang_model)
     # b) and a prediction head on top that is suited for our task
     prediction_head = TextClassificationHead(num_labels=len(label_list),
-                                             class_weights=[0.56,0.44] # Todo: Reihenfolge checken
+                                             class_weights=class_weights # Reihenfolge: Element i entspricht Klasse i (sklearn Methode sklearn.utils.class_weight.compute_class_weights implementiert bei farm
                                              )
 
     model = AdaptiveModel(
@@ -89,7 +97,7 @@ def text_pair_classification():
         model=model,
         learning_rate=5e-6,
         device=device,
-        n_batches=1466,
+        n_batches=n_batches,
         n_epochs=n_epochs)
 
     # An early stopping instance can be used to save the model that performs best on the dev set
@@ -132,6 +140,16 @@ def text_pair_classification():
     result = model.inference_from_dicts(dicts=basic_texts)
 
     print(result)
+
+def calc_n_batches_and_classweights(batch_size):
+    df = pd.read_csv(Path("/mnt/data/datasets/patents/patent_matching/train.tsv"), sep='\t', header=0)
+    class_0=(df['label'] == 0).sum()
+    class_1=(df['label'] == 1).sum()
+    samples=df.shape[0]
+
+    return samples, [class_0/samples,class_1/samples]
+
+
 
 if __name__ == "__main__":
     text_pair_classification()
