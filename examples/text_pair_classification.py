@@ -15,6 +15,7 @@ from farm.train import Trainer
 from farm.utils import set_all_seeds, MLFlowLogger, initialize_device_settings
 from farm.train import Trainer, EarlyStopping
 import pandas as pd
+import math
 
 
 
@@ -39,6 +40,7 @@ def text_pair_classification():
     label_list = ["0", "1"]
 
     n_batches,class_weights=calc_n_batches_and_classweights(batch_size)
+
     print("calculated n_batches")
     print(n_batches)
 
@@ -146,8 +148,9 @@ def calc_n_batches_and_classweights(batch_size):
     class_0=(df['label'] == 0).sum()
     class_1=(df['label'] == 1).sum()
     samples=df.shape[0]
+    n_batches=math.ceil(samples/batch_size)
 
-    return samples, [class_0/samples,class_1/samples]
+    return n_batches, [class_0/samples,class_1/samples]
 
 
 
