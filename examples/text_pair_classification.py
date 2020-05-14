@@ -25,22 +25,19 @@ def text_pair_classification():
         datefmt="%m/%d/%Y %H:%M:%S",
         level=logging.INFO)
 
-    ml_logger = MLFlowLogger(tracking_uri="https://public-mlflow.deepset.ai/")
-    ml_logger.init_experiment(experiment_name="Public_FARM", run_name="Run_text_pair_classification")
 
     ##########################
     ########## Settings ######
     ##########################
     set_all_seeds(seed=42)
     device, n_gpu = initialize_device_settings(use_cuda=True)
-    n_epochs = 2
-    batch_size = 32
-    evaluate_every = 500
+    n_epochs = 4
+    batch_size = 64
     lang_model = "bert-base-cased"
     label_list = ["0", "1"]
 
     n_batches,class_weights=calc_n_batches_and_classweights(batch_size)
-
+    evaluate_every = int(n_batches/10)
     print("calculated n_batches")
     print(n_batches)
 
@@ -59,7 +56,7 @@ def text_pair_classification():
                                                 label_list=label_list,
                                                 metric = "acc",
                                                 label_column_name="label",
-                                                max_seq_len=64,
+                                                max_seq_len=256,
                                                 train_filename="train.tsv",
                                                 test_filename="test.tsv",
                                                 dev_filename="dev.tsv",
@@ -108,7 +105,7 @@ def text_pair_classification():
         #metric="f1_weighted", mode="max",  # use f1_macro from the dev evaluator of the trainer
         metric="loss", mode="min",   # use loss from the dev evaluator of the trainer
         save_dir=Path("saved_models/text_pair_classification_model"),  # where to save the best model
-        patience=2    # number of evaluations to wait for improvement before terminating the training
+        patience=8    # number of evaluations to wait for improvement before terminating the training
     )
 
     # 6. Feed everything to the Trainer, which keeps care of growing our model into powerful plant and evaluates it from time to time
@@ -150,7 +147,8 @@ def calc_n_batches_and_classweights(batch_size):
     samples=df.shape[0]
     n_batches=math.ceil(samples/batch_size)
 
-    return n_batches, [class_0/samples,class_1/samples]
+    # frequent classes should get a lower weight
+    return n_batches, [class_1/samples,class_0/samples]
 
 
 
