@@ -28,22 +28,19 @@ def text_pair_classification():
         datefmt="%m/%d/%Y %H:%M:%S",
         level=logging.INFO)
 
-    ml_logger = MLFlowLogger(tracking_uri="https://public-mlflow.deepset.ai/")
-    ml_logger.init_experiment(experiment_name="Public_FARM", run_name="Run_text_pair_classification")
 
     ##########################
     ########## Settings ######
     ##########################
     set_all_seeds(seed=42)
     device, n_gpu = initialize_device_settings(use_cuda=True)
-    n_epochs = 2
-    batch_size = 32
-    evaluate_every = 500
+    n_epochs = 4
+    batch_size = 64
     lang_model = "bert-base-cased"
     label_list = ["0", "1"]
 
     n_batches,class_weights=calc_n_batches_and_classweights(batch_size)
-
+    evaluate_every = int(n_batches/10)
     print("calculated n_batches")
     print(n_batches)
 
@@ -62,10 +59,17 @@ def text_pair_classification():
                                                 label_list=label_list,
                                                 metric = "acc",
                                                 label_column_name="label",
+<<<<<<< HEAD
                                                 max_seq_len=64,
                                                 train_filename="trainT.tsv",
                                                 test_filename="testT.tsv",
                                                 dev_filename="devT.tsv",
+=======
+                                                max_seq_len=256,
+                                                train_filename="train.tsv",
+                                                test_filename="test.tsv",
+                                                dev_filename="dev.tsv",
+>>>>>>> 9cb617050176c90035bb039ae3ae299a0da14cff
                                                 #dev_split = 0.5,
                                                 data_dir=Path("/mnt/data/datasets/patents/patent_matching"),
                                                 tasks={"text_classification"},
@@ -112,8 +116,13 @@ def text_pair_classification():
     earlystopping = EarlyStopping(
         #metric="f1_weighted", mode="max",  # use f1_macro from the dev evaluator of the trainer
         metric="loss", mode="min",   # use loss from the dev evaluator of the trainer
+<<<<<<< HEAD
         save_dir=Path("saved_models/earlystopping/" + now.strftime("%m%d%Y%H%M%S")),  # where to save the best model
         patience=2    # number of evaluations to wait for improvement before terminating the training
+=======
+        save_dir=Path("saved_models/text_pair_classification_model"),  # where to save the best model
+        patience=8    # number of evaluations to wait for improvement before terminating the training
+>>>>>>> 9cb617050176c90035bb039ae3ae299a0da14cff
     )
 
 
@@ -156,6 +165,10 @@ def calc_n_batches_and_classweights(batch_size):
     samples=df.shape[0]
     n_batches=math.ceil(samples/batch_size)
 
+<<<<<<< HEAD
+=======
+    # frequent classes should get a lower weight
+>>>>>>> 9cb617050176c90035bb039ae3ae299a0da14cff
     return n_batches, [class_1/samples,class_0/samples]
 
 

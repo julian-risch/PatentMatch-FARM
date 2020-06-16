@@ -7,7 +7,8 @@ def execute():
     path = "/mnt/data/datasets/patents/patent_matching"
     positives =pd.read_csv(path+"/positives_satellite.csv",header=0,dtype={'application_claim_text': str,'patent_searchReport_paragraph':str})
     negatives =pd.read_csv(path+"/negatives_satellite.csv",header=0,dtype={'application_claim_text': str,'patent_searchReport_paragraph':str})
-    sample_size=0.1
+
+    sample_size=1.0#0.01
 
     positives = positives[['application_claim_text', 'patent_searchReport_paragraph']]
     positives["label"]="1"
@@ -50,7 +51,7 @@ def execute():
 
     # Drop NA Values and split in train, test, dev
     allSamples = allSamples.sort_values(by=['text']).dropna()
-    train, test_dev = train_test_split(allSamples,test_size=0.6, shuffle=False)
+    train, test_dev = train_test_split(allSamples,test_size=0.2, shuffle=False)
     test,dev = train_test_split(test_dev,test_size=0.5,shuffle=False)
 
     #Shuffle and sample from data
