@@ -16,6 +16,8 @@ from farm.utils import set_all_seeds, MLFlowLogger, initialize_device_settings
 from farm.train import Trainer, EarlyStopping
 import pandas as pd
 import math
+from datetime import datetime
+
 
 
 
@@ -102,13 +104,16 @@ def text_pair_classification():
         n_batches=n_batches,
         n_epochs=n_epochs)
 
+
+    now = datetime.now() # current date and time
+
     # An early stopping instance can be used to save the model that performs best on the dev set
     # according to some metric and stop training when no improvement is happening for some iterations.
     earlystopping = EarlyStopping(
         #metric="f1_weighted", mode="max",  # use f1_macro from the dev evaluator of the trainer
         metric="loss", mode="min",   # use loss from the dev evaluator of the trainer
-        save_dir=Path("saved_models/text_pair_classification_model"),  # where to save the best model
-        patience=2    # number of evaluations to wait for improvement before terminating the training
+        save_dir=Path("saved_models/earlystopping/"+ now.strftime("%m%d%Y%H%M%S")),  # where to save the best model
+        patience=8    # number of evaluations to wait for improvement before terminating the training
     )
 
     # 6. Feed everything to the Trainer, which keeps care of growing our model into powerful plant and evaluates it from time to time
@@ -127,7 +132,7 @@ def text_pair_classification():
     trainer.train()
 
     # 8. Hooray! You have a model. Store it:
-    save_dir = Path("saved_models/text_pair_classification_model")
+    save_dir = Path("saved_models/savingModel/"+ now.strftime("%m%d%Y%H%M%S"))
     model.save(save_dir)
     processor.save(save_dir)
 
@@ -150,7 +155,7 @@ def calc_n_batches_and_classweights(batch_size):
     samples=df.shape[0]
     n_batches=math.ceil(samples/batch_size)
 
-    return n_batches, [class_0/samples,class_1/samples]
+    return n_batches, [class_1/samples,class_0/samples]
 
 
 
