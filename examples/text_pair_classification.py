@@ -59,17 +59,12 @@ def text_pair_classification():
                                                 label_list=label_list,
                                                 metric = "acc",
                                                 label_column_name="label",
-<<<<<<< HEAD
-                                                max_seq_len=64,
-                                                train_filename="trainT.tsv",
-                                                test_filename="testT.tsv",
-                                                dev_filename="devT.tsv",
-=======
+
                                                 max_seq_len=256,
                                                 train_filename="train.tsv",
                                                 test_filename="test.tsv",
                                                 dev_filename="dev.tsv",
->>>>>>> 9cb617050176c90035bb039ae3ae299a0da14cff
+
                                                 #dev_split = 0.5,
                                                 data_dir=Path("/mnt/data/datasets/patents/patent_matching"),
                                                 tasks={"text_classification"},
