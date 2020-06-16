@@ -68,9 +68,9 @@ def execute():
     print((test['text'].isin(dev['text'])).value_counts())
 
 
-    train.to_csv(path+"/train.tsv", sep="\t", index=False)
-    test.to_csv(path+"/test.tsv", sep="\t", index=False)
-    dev.to_csv(path+"/dev.tsv", sep="\t", index=False)
+    train.to_csv(path+"/trainT.tsv", sep="\t", index=False)
+    test.to_csv(path+"/testT.tsv", sep="\t", index=False)
+    dev.to_csv(path+"/devT.tsv", sep="\t", index=False)
 
 
 if __name__ == '__main__':
