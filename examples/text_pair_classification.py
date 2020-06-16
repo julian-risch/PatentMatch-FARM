@@ -5,7 +5,6 @@ from pathlib import Path
 from farm.data_handler.data_silo import DataSilo
 from farm.data_handler.data_silo import StreamingDataSilo
 from farm.data_handler.processor import RegressionProcessor, TextPairClassificationProcessor
-
 from farm.experiment import initialize_optimizer
 from farm.infer import Inferencer
 from farm.modeling.adaptive_model import AdaptiveModel
@@ -17,8 +16,6 @@ from farm.utils import set_all_seeds, MLFlowLogger, initialize_device_settings
 from farm.train import Trainer, EarlyStopping
 import pandas as pd
 import math
-from datetime import datetime
-
 
 
 
@@ -63,9 +60,9 @@ def text_pair_classification():
                                                 metric = "acc",
                                                 label_column_name="label",
                                                 max_seq_len=64,
-                                                train_filename="trainT.tsv",
-                                                test_filename="testT.tsv",
-                                                dev_filename="devT.tsv",
+                                                train_filename="train.tsv",
+                                                test_filename="test.tsv",
+                                                dev_filename="dev.tsv",
                                                 #dev_split = 0.5,
                                                 data_dir=Path("/mnt/data/datasets/patents/patent_matching"),
                                                 tasks={"text_classification"},
@@ -107,15 +104,12 @@ def text_pair_classification():
 
     # An early stopping instance can be used to save the model that performs best on the dev set
     # according to some metric and stop training when no improvement is happening for some iterations.
-    now = datetime.now() # current date and time
-
     earlystopping = EarlyStopping(
         #metric="f1_weighted", mode="max",  # use f1_macro from the dev evaluator of the trainer
         metric="loss", mode="min",   # use loss from the dev evaluator of the trainer
-        save_dir=Path("saved_models/earlystopping/" + now.strftime("%m%d%Y%H%M%S")),  # where to save the best model
+        save_dir=Path("saved_models/text_pair_classification_model"),  # where to save the best model
         patience=2    # number of evaluations to wait for improvement before terminating the training
     )
-
 
     # 6. Feed everything to the Trainer, which keeps care of growing our model into powerful plant and evaluates it from time to time
     trainer = Trainer(
@@ -133,7 +127,7 @@ def text_pair_classification():
     trainer.train()
 
     # 8. Hooray! You have a model. Store it:
-    save_dir = Path("saved_models/normalstopping/text_pair_classification_model/"+now.strftime("%m%d%Y%H%M%S"))
+    save_dir = Path("saved_models/text_pair_classification_model")
     model.save(save_dir)
     processor.save(save_dir)
 
@@ -150,13 +144,13 @@ def text_pair_classification():
     print(result)
 
 def calc_n_batches_and_classweights(batch_size):
-    df = pd.read_csv(Path("/mnt/data/datasets/patents/patent_matching/trainT.tsv"), sep='\t', header=0)
+    df = pd.read_csv(Path("/mnt/data/datasets/patents/patent_matching/train.tsv"), sep='\t', header=0)
     class_0=(df['label'] == 0).sum()
     class_1=(df['label'] == 1).sum()
     samples=df.shape[0]
     n_batches=math.ceil(samples/batch_size)
 
-    return n_batches, [class_1/samples,class_0/samples]
+    return n_batches, [class_0/samples,class_1/samples]
 
 
 

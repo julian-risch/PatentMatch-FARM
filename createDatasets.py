@@ -7,7 +7,7 @@ def execute():
     path = "/mnt/data/datasets/patents/patent_matching"
     positives =pd.read_csv(path+"/positives_satellite.csv",header=0,dtype={'application_claim_text': str,'patent_searchReport_paragraph':str})
     negatives =pd.read_csv(path+"/negatives_satellite.csv",header=0,dtype={'application_claim_text': str,'patent_searchReport_paragraph':str})
-    sample_size=0.1
+    sample_size=0.01
 
     positives = positives[['application_claim_text', 'patent_searchReport_paragraph']]
     positives["label"]="1"
@@ -36,19 +36,11 @@ def execute():
     allSamples['text_b'] = allSamples['text_b'].str.replace('[^A-Za-z0-9\s.]+', '', regex=True)
     allSamples['text'] = allSamples['text'].str.replace('[^A-Za-z0-9\s.]+', '', regex=True)
 
-    #Remove leading whitespaces
-    allSamples['text_b'].replace("^\s", '', regex=True, inplace=True)
-    allSamples['text'].replace("^\s", '', regex=True, inplace=True)
-
-    #Remove space characters
-    allSamples['text_b'].replace('\B\s+|\s+\B', '', regex = True, inplace=True)
-    allSamples['text'].replace('\B\s+|\s+\B', '', regex=True, inplace=True)
-
     #Replace empty strings with Nan, so dropna removes it
-    allSamples['text_b'].replace("^[\s]*$", np.nan, regex=True, inplace=True)
-    allSamples['text'].replace("^[\s]*$", np.nan, regex=True, inplace=True)
+    allSamples['text_b'].replace('', np.nan, inplace=True)
+    allSamples['text'].replace('', np.nan, inplace=True)
 
-    # Drop NA Values and split in train, test, dev
+    #train,test,dev=train_test_dev_split(allSamples,0.4,0.3,0.3)
     allSamples = allSamples.sort_values(by=['text']).dropna()
     train, test_dev = train_test_split(allSamples,test_size=0.6, shuffle=False)
     test,dev = train_test_split(test_dev,test_size=0.5,shuffle=False)
@@ -67,9 +59,9 @@ def execute():
     print((test['text'].isin(dev['text'])).value_counts())
 
 
-    train.to_csv(path+"/trainT.tsv", sep="\t", index=False)
-    test.to_csv(path+"/testT.tsv", sep="\t", index=False)
-    dev.to_csv(path+"/devT.tsv", sep="\t", index=False)
+    train.to_csv(path+"/train.tsv", sep="\t", index=False)
+    test.to_csv(path+"/test.tsv", sep="\t", index=False)
+    dev.to_csv(path+"/dev.tsv", sep="\t", index=False)
 
 
 if __name__ == '__main__':
