@@ -476,7 +476,9 @@ class TextClassificationProcessor(Processor):
         text = dictionary["text"]
         tokenized = tokenize_with_metadata(text, self.tokenizer)
         if len(tokenized["tokens"]) == 0:
+            logger.warning(text)
             logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text}")
+            logger.warning(f"ZEILE 481")
             return []
         # truncate tokens, offsets and start_of_word to max_seq_len that can be handled by the model
         for seq_name in tokenized.keys():
@@ -519,10 +521,16 @@ class TextPairClassificationProcessor(TextClassificationProcessor):
         if len(tokenized_a["tokens"]) == 0:
             text = dictionary["text"]
             logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text}")
+            logger.warning(f"ZEILE 525")
             return []
         if len(tokenized_b["tokens"]) == 0:
             text_b = dictionary["text_b"]
             logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_b}")
+            logger.warning(f"ZEILE 530")
+            logger.warning(f"Claim")
+            logger.warning(dictionary["text"])
+            logger.warning(f"Paragraph")
+            logger.warning(dictionary["text_b"])
             return []
 
         tokenized = {"tokens": tokenized_a["tokens"],
@@ -693,6 +701,7 @@ class NERProcessor(Processor):
         if len(tokenized["tokens"]) == 0:
             text = dictionary["text"]
             logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text}")
+            logger.warning(f"ZEILE 700")
             return []
         # truncate tokens, offsets and start_of_word to max_seq_len that can be handled by the model
         for seq_name in tokenized.keys():
@@ -842,10 +851,12 @@ class BertStyleLMProcessor(Processor):
             if len(tokenized["text_a"]["tokens"]) == 0:
                 logger.warning(
                     f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_a}")
+                logger.warning(f"ZEILE 850")
                 continue
             if len(tokenized["text_b"]["tokens"]) == 0:
                 logger.warning(
                     f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_b}")
+                logger.warning(f"ZEILE 856")
                 continue
 
             # truncate to max_seq_len
@@ -908,10 +919,12 @@ class BertStyleLMProcessor(Processor):
                 if len(tokenized["text_a"]["tokens"]) == 0:
                     logger.warning(
                         f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_a}")
+                    logger.warning(f"ZEILE 918")
                     continue
                 if len(tokenized["text_b"]["tokens"]) == 0:
                     logger.warning(
                         f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text_b}")
+                    logger.warning(f"ZEILE 924")
                     continue
 
                 i -= num_unused_segments
@@ -1266,6 +1279,7 @@ class RegressionProcessor(Processor):
         if len(tokenized["tokens"]) == 0:
             text = dictionary["text"]
             logger.warning(f"The following text could not be tokenized, likely because it contains a character that the tokenizer does not recognize: {text}")
+            logger.warning(f"ZEILE 1279")
             return []
         # truncate tokens, offsets and start_of_word to max_seq_len that can be handled by the model
         for seq_name in tokenized.keys():
