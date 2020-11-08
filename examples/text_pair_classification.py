@@ -18,7 +18,8 @@ import pandas as pd
 import math
 from datetime import datetime
 
-
+training_filename="patentmatch_train_balanced.tsv"
+test_filename="patentmatch_test_balanced.tsv"
 
 
 def text_pair_classification():
@@ -62,11 +63,11 @@ def text_pair_classification():
                                                 metric = "acc",
                                                 label_column_name="label",
                                                 max_seq_len=64,
-                                                train_filename="train.tsv",
-                                                test_filename="test.tsv",
-                                                dev_filename="dev.tsv",
+                                                train_filename=training_filename,
+                                                test_filename=test_filename,
+                                                dev_filename=test_filename,
                                                 #dev_split = 0.5,
-                                                data_dir=Path("/mnt/data/datasets/patents/patent_matching"),
+                                                data_dir=Path("../data"),
                                                 tasks={"text_classification"},
                                                 delimiter="\t")
 
@@ -149,7 +150,7 @@ def text_pair_classification():
     print(result)
 
 def calc_n_batches_and_classweights(batch_size):
-    df = pd.read_csv(Path("/mnt/data/datasets/patents/patent_matching/train.tsv"), sep='\t', header=0)
+    df = pd.read_csv(Path("../data/"+training_filename), sep='\t', header=0)
     class_0=(df['label'] == 0).sum()
     class_1=(df['label'] == 1).sum()
     samples=df.shape[0]
